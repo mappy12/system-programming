@@ -1,0 +1,7 @@
+mkdir -p breaking-bad/"Heisenberg's group"
+echo "You're goddamn right" > "breaking-bad/Heisenberg's group/Heisenberg.txt"
+head -c 1000 /dev/urandom > "breaking-bad/Heisenberg's group/Pinkman.bin"
+mkdir -p "breaking-bad/Gustaw's cartel"
+truncate -s 300 "breaking-bad/Gustaw's cartel/Gustaw.bin"
+ln -s "../Heisenberg's group/Pinkman.bin" "breaking-bad/Gustaw's cartel/Pinkman.bin"
+ln "breaking-bad/Heisenberg's group/Heisenberg.txt" "breaking-bad/Heisenberg.txt"

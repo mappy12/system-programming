@@ -1,3 +1,5 @@
+#include <cstdio>
+#include <cstdlib>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <string.h>
@@ -8,7 +10,7 @@
 
 int create_text_file(const char* path, const char* content) {
 	int fd = open(path, O_CREAT | O_WRONLY | O_TRUNC, S_IRWXU);
-	if (fd == -1) return -1;
+	if (fd == -1) exit(-1);
 
 	size_t len = strlen(content);
 
@@ -16,7 +18,7 @@ int create_text_file(const char* path, const char* content) {
 	if (written_bites != (ssize_t)len) {
 		close(fd);
 		errno = (written_bites == -1) ? errno : EIO;
-		return -1;
+		exit(-1);
 	}
 
 	close(fd);
@@ -27,7 +29,7 @@ int create_empty_file(const char* path) {
 	int fd = open(path, O_CREAT | O_WRONLY | O_TRUNC, S_IRWXU);
 
 	if (fd == -1) {
-		return -1;
+		exit(-1);
 	}
 
 	close(fd);
@@ -36,11 +38,11 @@ int create_empty_file(const char* path) {
 
 int create_zero_file(const char* path, size_t size) {
 	int fd = open(path, O_CREAT | O_WRONLY, S_IRWXU);
-	if (fd == -1) return -1;
+	if (fd == -1) exit(-1);
 
 	if (ftruncate(fd, (off_t)size) == -1) {
 		close(fd);
-		return -1;
+		exit(-1);
 	}
 
 	close(fd);
@@ -51,13 +53,13 @@ int create_random_file(const char* path, size_t size) {
 	int fd_to = open(path, O_CREAT | O_WRONLY | O_TRUNC, S_IRWXU);
 
 	if (fd_to == -1) {
-		return -1;
+		exit(-1);
 	}
 
 	int fd_rand = open("/dev/urandom", O_RDONLY);
 	if (fd_rand == -1) {
 		close(fd_to);
-		return -1;
+		exit(-1);
 	}
 
 	unsigned char buffer[4096];
@@ -73,13 +75,13 @@ int create_random_file(const char* path, size_t size) {
 		if (actually_read <= 0) {
 			close(fd_rand);
 			close(fd_to);
-			return -1;
+			exit(-1);
 		}
 
 		if (write(fd_to, buffer, actually_read) != actually_read) {
 			close(fd_rand);
 			close(fd_to);
-			return -1;
+			exit(-1);
 		}
 
 		remaining_size -= actually_read;
@@ -91,19 +93,37 @@ int create_random_file(const char* path, size_t size) {
 	return 0;
 }
 
+void remove_dir() {
+	if (unlink("breaking-bad/Gustaw's cartel/Gustaw.bin") == -1)
+		perror("UNLINK ERROR: breaking-bad/Gustaw's cartel/Gustaw.bin");
+	if (unlink("breaking-bad/Gustaw's cartel/Pinkman.bin") == -1)
+		perror("UNLINK ERROR: breaking-bad/Gustaw's cartel/Pinkman.bin");
+	if (rmdir("breaking-bad/Gustaw's cartel") == -1)
+		perror("RMDIR ERROR: ");
+	if (unlink("breaking-bad/Heisenberg's group/Pinkman.bin") == -1)
+		perror("UNLINK ERROR: breaking-bad/Heisenberg's group/Pinkman.bin ");
+	if (unlink("breaking-bad/Heisenberg's group/Heisenberg.txt") == -1)
+		perror("UNLINK ERROR: breaking-bad/Heisenberg's group/Heisenberg.txt");
+	if (rmdir("breaking-bad/Heisenberg's group") == -1)
+		perror("RMDIR ERROR: breaking-bad/Heisenberg's group");
+	if (unlink("breaking-bad/Heisenberg_link.txt") == -1)
+		perror("UNLINK ERROR: breaking-bad/Heisenberg_link.txt");
+	if (rmdir("breaking-bad") == -1)
+		perror("RMDIR ERROR: breaking-bad");
+}
+
 int main() {
-	mkdir("../a", S_IRWXU);
-	mkdir("../a/b", S_IRWXU);
 
-	create_text_file("../a/b/cat.txt", "catts");
-	mkdir("../a/c", S_IRWXU);
-	create_empty_file("../a/c/dog.txt");
+	mkdir("breaking-bad", S_IRWXU);
 
-	symlink("../a/c", "../a/d");
+	mkdir("breaking-bad/Heisenberg's group", S_IRWXU);
+	create_text_file("breaking-bad/Heisenberg's group/Heisenberg.txt", "You're goddamn right");
+	create_random_file("breaking-bad/Heisenberg's group/Pinkman.bin", 1000);
 
-	mkdir("../a/e", S_IRWXU);
-	link("../a/b/cat.txt", "../a/e/f.txt");
+	mkdir("breaking-bad/Gustaw's cartel", S_IRWXU);
+	create_zero_file("breaking-bad/Gustaw's cartel/Gustaw.bin", 300);
+	symlink("../Heisenberg's group/Pinkman.bin", "breaking-bad/Gustaw's cartel/Pinkman.bin");
+	link("breaking-bad/Heisenberg's group/Heisenberg.txt", "breaking-bad/Heisenberg_link.txt");
 
-	create_random_file("../a/e/g.bin", 500);
-	create_zero_file("../a/e/h.bin", 35);
+	remove_dir();
 }
