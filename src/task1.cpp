@@ -3,7 +3,12 @@
 #include <unistd.h>
 #include <vector>
 #include <algorithm>
-#include <random>b
+#include <random>
+#include <ctime>
+#include <cstdio>
+#include <cerrno>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 #include "check.hpp"
 
@@ -24,7 +29,7 @@ void handler_plain(int signum) {
         g_peer_dead = 1;
 }
 
-void handler_rt(int signum, siginfo_t* si) {
+void handler_rt(int signum, siginfo_t* si, void* /*ctx*/) {
     g_last_sig = signum;
     g_sig_value = si->si_value.sival_int;
 }
