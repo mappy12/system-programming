@@ -74,10 +74,14 @@ bool run_riddler(pid_t peer_pid, int upper_bound, int round, const sigset_t& wai
     int attempts = 0;
 
     while (true) {
-        if (!wait_signal(wait_mask)) return false;
+        if (g_last_sig != SIG_GUESS) {
+            if (!wait_signal(wait_mask)) return false;
+        }
+
         if (g_last_sig != SIG_GUESS) continue;
 
         int guess = static_cast<int>(g_sig_value);
+        g_last_sig = 0;
         ++attempts;
         printf("[Загадывающий PID=%d] Получено: %d\n", getpid(), guess);
 
@@ -120,6 +124,7 @@ static bool run_guesser(pid_t peer_pid, int upper_bound, int round, const sigset
         if (!wait_signal(wait_mask)) return false;
 
         if (g_last_sig == SIG_HIT) {
+            g_last_sig = 0;
             printf("[Угадывающий  PID=%d] Угадал %d за %d попыток!\n",
                    getpid(), guess, attempts);
             return true;
