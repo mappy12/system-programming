@@ -134,10 +134,6 @@ static bool run_guesser(pid_t peer_pid, int upper_bound, int round, const sigset
 
 static void run_game(pid_t peer_pid, int upper_bound, bool is_parent) {
 
-    sigset_t block_all;
-    sigfillset(&block_all);
-    check(sigprocmask(SIG_SETMASK, &block_all, nullptr));
-
     set_handler_rt(SIG_GUESS, handler_rt);
     set_handler_rt(SIG_READY, handler_rt);
     set_handler_plain(SIG_HIT,  handler_plain);
@@ -192,6 +188,10 @@ int main(int argc, char* argv[]) {
     }
 
     printf("Игра 'Угадай число'. Диапазон: 1..%d, раундов: %d\n\n", upper_bound, ROUNDS);
+
+    sigset_t block_all;
+    sigfillset(&block_all);
+    check(sigprocmask(SIG_SETMASK, &block_all, nullptr));
 
     pid_t child_pid = check(fork());
 
