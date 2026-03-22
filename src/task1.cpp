@@ -181,7 +181,7 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    printf("Игра 'Угадай число'. Диапазон: 1..%d\n\n", upper_bound, ROUNDS);
+    printf("Игра 'Угадай число'. Диапазон: 1..%d, раундов: %d\n\n", upper_bound, ROUNDS);
 
     pid_t child_pid = check(fork());
 
@@ -193,7 +193,7 @@ int main(int argc, char* argv[]) {
         check(waitpid(child_pid, &stat, 0));
         printf("\n[Родитель] Игра окончена!\n");
     } else {
-        run_game(getpid(), upper_bound, false);
+        run_game(getppid(), upper_bound, false);
         exit(EXIT_SUCCESS);
     }
 
