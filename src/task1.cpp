@@ -3,7 +3,7 @@
 #include <unistd.h>
 #include <vector>
 #include <algorithm>
-#include <random>b
+#include <random>
 
 #include "check.hpp"
 
@@ -14,19 +14,31 @@
 
 const int ROUNDS = 10;
 
-static volatile sig_atomic_t g_last_sig = 0;
+static volatile sig_atomic_t g_guess_ready = 0;
+static volatile sig_atomic_t g_ready = 0;
+static volatile sig_atomic_t g_hit = 0;
+static volatile sig_atomic_t g_miss = 0;
+
 static volatile sig_atomic_t g_sig_value = 0;
 static volatile sig_atomic_t g_peer_dead = 0;
 
 void handler_plain(int signum) {
-    g_last_sig = signum;
-    if (signum == SIGCHLD || signum == SIGTERM)
+    if (signum == SIG_HIT)
+        g_hit = 1;
+    else if (signum == SIG_MISS)
+        g_miss = 1;
+    else if (signum == SIGCHLD || signum == SIGTERM)
         g_peer_dead = 1;
 }
 
-void handler_rt(int signum, siginfo_t* si) {
-    g_last_sig = signum;
-    g_sig_value = si->si_value.sival_int;
+void handler_rt(int signum, siginfo_t* si, void*) {
+    if (signum == SIG_GUESS) {
+        g_sig_value = si->si_value.sival_int;
+        g_guess_ready = 1;
+    }
+    else if (signum == SIG_READY) {
+        g_ready = 1;
+    }
 }
 
 void set_handler_plain(int sig, void (*fn)(int)) {
@@ -50,9 +62,11 @@ void send_rt(pid_t pid, int sig, int value) {
     check(sigqueue(pid, sig, sv));
 }
 
-bool wait_signal(const sigset_t& wait_mask) {
-    check_except(sigsuspend(&wait_mask), EINTR);
-    return g_peer_dead == 0;
+bool wait_flag(volatile sig_atomic_t* flag, const sigset_t& wait_mask) {
+    while (!(*flag) && !g_peer_dead) {
+        check_except(sigsuspend(&wait_mask), EINTR);
+    }
+    return !g_peer_dead;
 }
 
 bool run_riddler(pid_t peer_pid, int upper_bound, int round, const sigset_t& wait_mask) {
@@ -60,19 +74,19 @@ bool run_riddler(pid_t peer_pid, int upper_bound, int round, const sigset_t& wai
     printf("\n[Загадывающий PID=%d] Раунд %d/%d: загадал %d (1...%d)\n",
         getpid(), round, ROUNDS, secret, upper_bound);
 
-    while (g_last_sig != SIG_READY) {
-        if (!wait_signal(wait_mask)) return false;
-    }
+    g_ready = 0;
+    send_rt(peer_pid, SIG_READY, 0);
 
-    g_last_sig = 0;
+    if (!wait_flag(&g_ready, wait_mask)) return false;
 
     int attempts = 0;
 
     while (true) {
-        if (!wait_signal(wait_mask)) return false;
-        if (g_last_sig != SIG_GUESS) continue;
+        g_guess_ready = 0;
+        if (!wait_flag(&g_guess_ready, wait_mask)) return false;
 
         int guess = static_cast<int>(g_sig_value);
+
         ++attempts;
         printf("[Загадывающий PID=%d] Получено: %d\n", getpid(), guess);
 
@@ -98,6 +112,9 @@ static bool run_guesser(pid_t peer_pid, int upper_bound, int round, const sigset
                      static_cast<unsigned>(time(nullptr)) ^ static_cast<unsigned>(getpid())
                  ));
 
+    g_ready = 0;
+    if (!wait_flag(&g_ready, wait_mask)) return false;
+
     send_rt(peer_pid, SIG_READY, 0);
 
     int attempts = 0;
@@ -112,13 +129,23 @@ static bool run_guesser(pid_t peer_pid, int upper_bound, int round, const sigset
 
         send_rt(peer_pid, SIG_GUESS, guess);
 
-        if (!wait_signal(wait_mask)) return false;
+        g_hit = 0;
+        g_miss = 0;
 
-        if (g_last_sig == SIG_HIT) {
+        // ждём либо HIT, либо MISS
+        while (!g_hit && !g_miss && !g_peer_dead) {
+            check_except(sigsuspend(&wait_mask), EINTR);
+        }
+
+        if (g_peer_dead) return false;
+
+        if (g_hit) {
             printf("[Угадывающий  PID=%d] Угадал %d за %d попыток!\n",
                    getpid(), guess, attempts);
             return true;
         }
+
+        // если MISS - просто продолжаем цикл
     }
 }
 
