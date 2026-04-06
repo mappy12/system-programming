@@ -42,23 +42,23 @@ void setup_handlers() {
     sa_guess.sa_flags = SA_SIGINFO;      
     sa_guess.sa_sigaction = guess_handler;
     sigemptyset(&sa_guess.sa_mask);      
-    sigaction(SIG_GUESS, &sa_guess, nullptr);
+    check(sigaction(SIG_GUESS, &sa_guess, nullptr));
 
     struct sigaction sa_simple{};
     sa_simple.sa_handler = result_handler; 
     sigemptyset(&sa_simple.sa_mask);
     sa_simple.sa_flags = 0;          
 
-    sigaction(SIG_WIN, &sa_simple, nullptr);
-    sigaction(SIG_LOSE, &sa_simple, nullptr);
+    check(sigaction(SIG_WIN, &sa_simple, nullptr));
+    check(sigaction(SIG_LOSE, &sa_simple, nullptr));
 
     struct sigaction sa_term{};
     sa_term.sa_handler = term_handler;
     sigemptyset(&sa_term.sa_mask);
     sa_term.sa_flags = 0;
 
-    sigaction(SIGINT, &sa_term, nullptr);
-    sigaction(SIGTERM, &sa_term, nullptr);
+    check(sigaction(SIGINT, &sa_term, nullptr));
+    check(sigaction(SIGTERM, &sa_term, nullptr));
 }
 
 void wait_for(volatile sig_atomic_t &flag, sigset_t &wait_mask) {
@@ -71,7 +71,10 @@ void wait_for(volatile sig_atomic_t &flag, sigset_t &wait_mask) {
 void send_guess(pid_t pid, int value) {
     union sigval val;
     val.sival_int = value;
-    sigqueue(pid, SIG_GUESS, val);
+    if (sigqueue(pid, SIG_GUESS, val) == -1) {
+        perror("sigqueue");
+        exit(1);
+    }
 }
 
 
@@ -138,7 +141,10 @@ int main(int argc, char *argv[]) {
                 funlockfile(stdout);
 
                 if (guess_value == secret) {
-                    kill(other, SIG_WIN);
+                    if (kill(other, SIG_WIN) == -1) {
+                      perror("kill SIG_WIN");
+                      exit(1);
+                    }
                     
                     flockfile(stdout);
                     cout << "[(" << role << ") PID " << getpid()
@@ -146,7 +152,10 @@ int main(int argc, char *argv[]) {
                          funlockfile(stdout);
                     break;
                 } else {
-                    kill(other, SIG_LOSE);
+                    if (kill(other, SIG_LOSE) == -1) {
+                      perror("kill SIG_LOSE");
+                      exit(1);
+                    }       
                 }
             }
 
