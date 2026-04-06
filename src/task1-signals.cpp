@@ -6,6 +6,8 @@
 #include <ctime>
 #include <vector>
 
+#include "check.hpp"
+
 using namespace std;
 
 #define SIG_GUESS SIGRTMIN
@@ -36,24 +38,32 @@ void term_handler(int) {
 }
 
 void setup_handlers() {
-    struct sigaction sa{};
-    sa.sa_flags = SA_SIGINFO;
-    sa.sa_sigaction = guess_handler;
-    sigaction(SIG_GUESS, &sa, nullptr);
+    struct sigaction sa_guess{};
+    sa_guess.sa_flags = SA_SIGINFO;      
+    sa_guess.sa_sigaction = guess_handler;
+    sigemptyset(&sa_guess.sa_mask);      
+    sigaction(SIG_GUESS, &sa_guess, nullptr);
 
-    signal(SIG_WIN, result_handler);
-    signal(SIG_LOSE, result_handler);
+    struct sigaction sa_simple{};
+    sa_simple.sa_handler = result_handler; 
+    sigemptyset(&sa_simple.sa_mask);
+    sa_simple.sa_flags = 0;          
 
-    signal(SIGINT, term_handler);
-    signal(SIGTERM, term_handler);
+    sigaction(SIG_WIN, &sa_simple, nullptr);
+    sigaction(SIG_LOSE, &sa_simple, nullptr);
+
+    struct sigaction sa_term{};
+    sa_term.sa_handler = term_handler;
+    sigemptyset(&sa_term.sa_mask);
+    sa_term.sa_flags = 0;
+
+    sigaction(SIGINT, &sa_term, nullptr);
+    sigaction(SIGTERM, &sa_term, nullptr);
 }
 
-void wait_for(volatile sig_atomic_t &flag) {
-    sigset_t mask;
-    sigemptyset(&mask);
-
+void wait_for(volatile sig_atomic_t &flag, sigset_t &wait_mask) {
     while (!flag && !terminate_flag) {
-        sigsuspend(&mask);
+        sigsuspend(&wait_mask);
     }
     flag = 0;
 }
@@ -72,6 +82,14 @@ int main(int argc, char *argv[]) {
     }
 
     int N = atoi(argv[1]);
+    
+    sigset_t mask_game, old_mask;
+    sigemptyset(&mask_game);
+    sigaddset(&mask_game, SIGRTMIN);
+    sigaddset(&mask_game, SIG_WIN); 
+    sigaddset(&mask_game, SIG_LOSE); 
+
+    check(sigprocmask(SIG_SETMASK, &mask_game, &old_mask));
 
     setup_handlers();
 
@@ -88,6 +106,12 @@ int main(int argc, char *argv[]) {
     const char* role = is_parent ? "Parent" : "Child";
 
     pid_t other = is_parent ? child : getppid();
+    
+    check(sigprocmask(SIG_SETMASK, &old_mask, nullptr));
+    
+    sigset_t wait_guess, wait_result;
+    sigemptyset(&wait_guess);
+    sigemptyset(&wait_result);
 
     const int ROUNDS = 10;
 
@@ -105,7 +129,7 @@ int main(int argc, char *argv[]) {
             funlockfile(stdout);
 
             while (!terminate_flag) {
-                wait_for(guess_ready);
+                wait_for(guess_ready, wait_guess);
 
                 attempts++;
                 
@@ -151,7 +175,7 @@ int main(int argc, char *argv[]) {
 
                 send_guess(other, guess);
 
-                wait_for(result_ready);
+                wait_for(result_ready, wait_result);
 
                 if (result) {
                     flockfile(stdout);
