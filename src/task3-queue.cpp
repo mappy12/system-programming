@@ -21,11 +21,11 @@ void sigchld_handler(int) {
     child_dead = 1;
 }
 
-// Проверка жив ли процесс
 bool is_alive(pid_t pid) {
     if (pid <= 0) return false;
     if (kill(pid, 0) == 0) return true;
     if (errno == EPERM) return true;
+    
     return false;
 }
 
@@ -34,8 +34,10 @@ bool mq_send_int(mqd_t mq, int value, pid_t peer) {
         if (!is_alive(peer)) return false;
 
         int res = mq_send(mq, (const char*)&value, sizeof(value), 0);
+        
         if (res == 0) return true;            
-        if (errno == EAGAIN) continue;        
+        if (errno == EAGAIN) continue;
+        
         check(res);                           
     }
 }
@@ -45,8 +47,10 @@ bool mq_receive_int(mqd_t mq, int& value, pid_t peer) {
         if (!is_alive(peer)) return false;
 
         ssize_t n = mq_receive(mq, (char*)&value, sizeof(value), nullptr);
+        
         if (n == sizeof(value)) return true; 
-        if (errno == EAGAIN) continue;  
+        if (errno == EAGAIN) continue;
+        
         check(n);
     }
 }
@@ -57,12 +61,14 @@ void riddler(int secret, mqd_t read_mq, mqd_t write_mq, pid_t peer, int round) {
 
     while (is_alive(peer)) {
         int guess;
+        
         if (!mq_receive_int(read_mq, guess, peer)) break;
 
         cout << "Раунд " << round << ". PID " << getpid() << " получил: " << guess << "\n";
         fflush(stdout);
 
         int correct = (guess == secret);
+        
         if (!mq_send_int(write_mq, correct, peer)) break;
         if (correct) break;
     }
@@ -73,6 +79,7 @@ void guesser(int N, mqd_t write_mq, mqd_t read_mq, pid_t peer, int round) {
 
     while (is_alive(peer)) {
         int guess = rand() % N + 1;
+        
         attempts++;
 
         cout << "Раунд " << round << ". PID " << getpid() << " отправил: " << guess << "\n";
@@ -81,6 +88,7 @@ void guesser(int N, mqd_t write_mq, mqd_t read_mq, pid_t peer, int round) {
         if (!mq_send_int(write_mq, guess, peer)) break;
 
         int response;
+        
         if (!mq_receive_int(read_mq, response, peer)) break;
 
         if (response) {
@@ -132,8 +140,8 @@ int main(int argc, char* argv[]) {
 
     pid_t pid = check(fork());
     if (pid == 0) {
-        // CHILD
         pid_t parent_id = getppid();
+        
         mqd_t read_mq  = check(mq_open(MQ_PARENT, O_RDONLY | O_NONBLOCK));
         mqd_t write_mq = check(mq_open(MQ_CHILD,  O_WRONLY | O_NONBLOCK));
 
