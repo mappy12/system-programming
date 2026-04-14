@@ -49,3 +49,45 @@ Matrix read_matrix(const  std::string& filename) {
     return matrix;
 
 }
+
+
+void seq_mult_matrix(const double* A, const double* B, double* C, const int N) {
+    for (int i = 0; i < N; ++i) {
+        for (int j = 0; j < N; ++j) {
+            double sum = 0.0;
+            for (int k = 0; k < N; ++k) {
+                sum += A[i * N + k] * B[k * N + j];
+            }
+            C[i * N + j] = sum;
+        }
+    }
+}
+
+void* threads_mult_matrix(void* arg) {
+    ThreadArgs* args = static_cast<ThreadArgs*>(arg);
+    const int N = args->N;
+
+    for (int i = args->start_row; i < args->end_row; ++i) {
+        for (int j = 0; j < N; ++j) {
+            double sum = 0.0;
+            for (int k = 0; k < N; ++k) {
+                sum += args->A[i * N + k] * args->B[k * N + j];
+            }
+            args->C[i * N + j] = sum;
+        }
+    }
+    return nullptr;
+}
+
+bool check_results(const double* C_seq, const double* C_par, int N) {
+    const double epsilon = 1e-6;
+    for (int i = 0; i < N * N; ++i) {
+        if (std::abs(C_seq[i] - C_par[i]) > epsilon) {
+            std::cout << "Mismatch at index " << i << ": Seq=" << C_seq[i] << ", Par=" << C_par[i] << std::endl;
+            return false;
+        }
+    }
+    return true;
+}
+
+
