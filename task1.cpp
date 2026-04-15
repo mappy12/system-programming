@@ -82,6 +82,39 @@ void* threads_mult_matrix(void* arg) {
 }
 
 
+void run_parallel_mult(const Matrix& matA, const Matrix& matB, std::vector<double>& C_par, int num_threads) {
+    int N = matA.N;
+    std::vector<pthread_t> threads(num_threads);
+    std::vector<ThreadArgs> args(num_threads);
+
+    int rows_per_thread = N / num_threads;
+    int current_row = 0;
+
+    for (int t = 0; t < num_threads; ++t) {
+        args[t].A = matA.data.data();
+        args[t].B = matB.data.data();
+        args[t].C = C_par.data();
+        args[t].N = N;
+        args[t].start_row = current_row;
+
+        if (t == num_threads - 1) {
+            args[t].end_row = N;
+        } else {
+            args[t].end_row = current_row + rows_per_thread;
+        }
+        current_row = args[t].end_row;
+
+        int rc = pthread_create(&threads[t], nullptr, threads_mult_matrix, &args[t]);
+        if (rc) {
+            throw std::runtime_error("Error creating thread: " + std::to_string(rc));
+        }
+    }
+
+    for (int t = 0; t < num_threads; ++t) {
+        pthread_join(threads[t], nullptr);
+    }
+}
+
 bool check_results(const double* C_seq, const double* C_par, const int N) {
     const double epsilon = 1e-6;
     for (int i = 0; i < N * N; ++i) {
@@ -107,79 +140,94 @@ void print_matrix(const double* data, int N, const std::string& name) {
 
 
 int main() {
-    const std::string fileA = "matrixA.bin";
-    const std::string fileB = "matrixB.bin";
+    try {
+        const std::string fileA_small = "../matrices/small_matrix1.bin";
+        const std::string fileB_small = "../matrices/small_matrix2.bin";
+        const std::string fileA_large = "../matrices/big_matrix1.bin";
+        const std::string fileB_large = "../matrices/big_matrix2.bin";
 
-    Matrix matrixA = read_matrix(fileA);
-    Matrix matrixB = read_matrix(fileB);
+        std::cout << "=== TASK 1: SMALL MATRICES ===" << std::endl;
 
-    const int N = matrixA.N;
-    std::cout << "Matrix size N = " << N << std::endl;
+        Matrix matA_s = read_matrix(fileA_small);
+        Matrix matB_s = read_matrix(fileB_small);
+        int N_s = matA_s.N;
 
-    std::vector<double> C_seq(N * N, 0.0);
-    std::vector<double> C_par(N * N, 0.0);
+        std::cout << "Small matrices size N = " << N_s << std::endl;
 
-    std::cout << "Starting sequential multiplication..." << std::endl;
-    const auto start_seq = std::chrono::high_resolution_clock::now();
-    seq_mult_matrix(matrixA.data.data(), matrixB.data.data(), C_seq.data(), N);
-    const auto end_seq = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> diff_seq = end_seq - start_seq;
-    std::cout << "Sequential time: " << diff_seq.count() << " seconds" << std::endl;
+        std::vector<double> C_seq_s(N_s * N_s, 0.0);
+        std::vector<double> C_par_s(N_s * N_s, 0.0);
 
-    std::cout << "Starting parallel multiplication..." << std::endl;
+        auto start_seq_s = std::chrono::high_resolution_clock::now();
+        seq_mult_matrix(matA_s.data.data(), matB_s.data.data(), C_seq_s.data(), N_s);
+        auto end_seq_s = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> diff_seq_s = end_seq_s - start_seq_s;
 
-    int num_threads = 4;
-    if (N < 100) num_threads = 2;
+        int threads_s = (N_s < 100) ? 2 : 4;
+        auto start_par_s = std::chrono::high_resolution_clock::now();
+        run_parallel_mult(matA_s, matB_s, C_par_s, threads_s);
+        auto end_par_s = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> diff_par_s = end_par_s - start_par_s;
 
-    std::vector<pthread_t> threads(num_threads);
-    std::vector<ThreadArgs> args(num_threads);
+        std::cout << "Seq time: " << diff_seq_s.count() << " s" << std::endl;
+        std::cout << "Par time: " << diff_par_s.count() << " s" << std::endl;
 
-    const auto start_par = std::chrono::high_resolution_clock::now();
-
-    int rows_per_thread = N / num_threads;
-    int current_row = 0;
-    for (int t = 0; t < num_threads; ++t) {
-        args[t].A = matrixA.data.data();
-        args[t].B = matrixB.data.data();
-        args[t].C = C_par.data();
-        args[t].N = N;
-        args[t].start_row = current_row;
-
-        if (t == num_threads - 1) {
-            args[t].end_row = N;
+        if (check_results(C_seq_s.data(), C_par_s.data(), N_s)) {
+            std::cout << "Results match!" << std::endl;
         } else {
-            args[t].end_row = current_row + rows_per_thread;
+            std::cout << "Results DO NOT match!" << std::endl;
         }
 
-        current_row = args[t].end_row;
-
-        int rc = pthread_create(&threads[t], nullptr, threads_mult_matrix, &args[t]);
-        if (rc) {
-            throw std::runtime_error("Error creating thread: " + std::to_string(rc));
+        if (N_s <= 10) {
+            print_matrix(matA_s.data.data(), N_s, "A");
+            print_matrix(matB_s.data.data(), N_s, "B");
+            print_matrix(C_seq_s.data(), N_s, "Result (Seq)");
+            print_matrix(C_par_s.data(), N_s, "Result (Par)");
         }
-    }
 
-    for (int t = 0; t < num_threads; ++t) {
-        pthread_join(threads[t], nullptr);
-    }
+        std::cout << "\n=== TASK 1: LARGE MATRICES ===" << std::endl;
 
-    const auto end_par = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> diff_par = end_par - start_par;
-    std::cout << "Parallel time (" << num_threads << " threads): " << diff_par.count() << " seconds" << std::endl;
+        Matrix matA_l = read_matrix(fileA_large);
+        Matrix matB_l = read_matrix(fileB_large);
+        int N_l = matA_l.N;
 
-    std::cout << "Checking results..." << std::endl;
-    if (check_results(C_seq.data(), C_par.data(), N)) {
-        std::cout << "Results match!" << std::endl;
-    } else {
-        std::cout << "Results DO NOT match!" << std::endl;
-    }
+        std::cout << "Large matrices size N = " << N_l << std::endl;
 
-    if (N <= 10) {
-        print_matrix(matrixA.data.data(), N, "A");
-        print_matrix(matrixB.data.data(), N, "B");
-        print_matrix(C_seq.data(), N, "Result (Seq)");
-        print_matrix(C_par.data(), N, "Result (Par)");
+        std::vector<double> C_seq_l(N_l * N_l, 0.0);
+        std::vector<double> C_par_l(N_l * N_l, 0.0);
+
+        std::cout << "Starting sequential multiplication..." << std::endl;
+        auto start_seq_l = std::chrono::high_resolution_clock::now();
+        seq_mult_matrix(matA_l.data.data(), matB_l.data.data(), C_seq_l.data(), N_l);
+        auto end_seq_l = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> diff_seq_l = end_seq_l - start_seq_l;
+        std::cout << "Sequential time: " << diff_seq_l.count() << " s" << std::endl;
+
+        int threads_l = 8;
+        std::cout << "Starting parallel multiplication (" << threads_l << " threads)..." << std::endl;
+        auto start_par_l = std::chrono::high_resolution_clock::now();
+        run_parallel_mult(matA_l, matB_l, C_par_l, threads_l);
+        auto end_par_l = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> diff_par_l = end_par_l - start_par_l;
+        std::cout << "Parallel time:   " << diff_par_l.count() << " s" << std::endl;
+
+        std::cout << "Checking results..." << std::endl;
+        if (check_results(C_seq_l.data(), C_par_l.data(), N_l)) {
+            std::cout << "Results match!" << std::endl;
+        } else {
+            std::cout << "Results DO NOT match!" << std::endl;
+        }
+
+        if (diff_par_l.count() > 0) {
+            double speedup = diff_seq_l.count() / diff_par_l.count();
+            std::cout << "Speedup: " << speedup << "x" << std::endl;
+        }
+
+    } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
+        return 1;
     }
 
     return 0;
 }
+
+
