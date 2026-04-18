@@ -1,0 +1,4 @@
+g++ -std=c++17 -Wall -Wextra -O2 -o task1 task1-signals.cpp
+g++ -std=c++17 -Wall -Wextra -o task2 task2-pipe.cpp
+g++ -std=c++17 -Wall -Wextra -o task3 task3-queue.cpp
+

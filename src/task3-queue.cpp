@@ -22,7 +22,6 @@ void sigchld_handler(int) {
 }
 
 bool is_alive(pid_t pid) {
-    if (pid <= 0) return false;
     if (kill(pid, 0) == 0) return true;
     if (errno == EPERM) return true;
     
@@ -131,8 +130,8 @@ int main(int argc, char* argv[]) {
     mq_unlink(MQ_PARENT);
     mq_unlink(MQ_CHILD);
 
-    mqd_t mq_parent = check(mq_open(MQ_PARENT, O_CREAT | O_RDWR | O_NONBLOCK, 0666, &attr));
-    mqd_t mq_child  = check(mq_open(MQ_CHILD,  O_CREAT | O_RDWR | O_NONBLOCK, 0666, &attr));
+    check(mq_open(MQ_PARENT, O_CREAT | O_RDWR | O_NONBLOCK, 0666, &attr));
+    check(mq_open(MQ_CHILD,  O_CREAT | O_RDWR | O_NONBLOCK, 0666, &attr));
 
     struct sigaction sa{};
     sa.sa_handler = sigchld_handler;
@@ -140,6 +139,10 @@ int main(int argc, char* argv[]) {
 
     pid_t pid = check(fork());
     if (pid == 0) {
+<<<<<<< Updated upstream
+=======
+
+>>>>>>> Stashed changes
         pid_t parent_id = getppid();
         
         mqd_t read_mq  = check(mq_open(MQ_PARENT, O_RDONLY | O_NONBLOCK));
@@ -154,7 +157,6 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    // PARENT
     mqd_t read_mq  = check(mq_open(MQ_CHILD,  O_RDONLY | O_NONBLOCK));
     mqd_t write_mq = check(mq_open(MQ_PARENT, O_WRONLY | O_NONBLOCK));
 
