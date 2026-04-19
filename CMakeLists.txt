@@ -1,12 +1,16 @@
 cmake_minimum_required(VERSION 3.10)
-project(Lab3_Task1)
+project(Lab3_SystemProgramming)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(Threads REQUIRED)
 
-add_executable(task1 task1.cpp
-        task2.cpp)
-
+add_executable(task1 task1.cpp)
 target_link_libraries(task1 Threads::Threads)
+
+add_executable(task2 task2.cpp)
+target_link_libraries(task2 Threads::Threads)
+
+add_executable(task3 task3.cpp)
+target_link_libraries(task3 Threads::Threads)
