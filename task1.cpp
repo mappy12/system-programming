@@ -1,5 +1,6 @@
 #include <iostream>
 #include <fstream>
+#include <filesystem>
 #include <vector>
 #include <cmath>
 #include <string>
@@ -8,6 +9,8 @@
 #include <pthread.h>
 #include <stdexcept>
 #include <algorithm>
+
+#include "check.hpp"
 
 struct Matrix {
     std::vector<double> data;
@@ -25,12 +28,11 @@ struct ThreadArgs {
 
 
 Matrix read_matrix(const std::string& filename) {
-    std::ifstream file(filename, std::ios::binary | std::ios::ate);
+    if (!std::filesystem::exists(filename)) {
+        throw std::runtime_error("File does not exist: " + filename);
+    }
 
-    if (!file.is_open()) throw std::runtime_error("Cannot open file: " + filename);
-
-    std::streamsize size = file.tellg();
-    file.seekg(0, std::ios::beg);
+    uintmax_t size = std::filesystem::file_size(filename);
 
     if (size % sizeof(double) != 0) {
         throw std::runtime_error("Invalid file size for double matrix: " + filename);
@@ -43,12 +45,17 @@ Matrix read_matrix(const std::string& filename) {
     matrix.N = N;
     matrix.data.resize(total_elements);
 
-    if (!file.read(reinterpret_cast<char*>(matrix.data.data()), size)) {
+    std::ifstream file(filename, std::ios::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("Cannot open file: " + filename);
+    }
+
+    file.read(reinterpret_cast<char*>(matrix.data.data()), size);
+    if (!file) {
         throw std::runtime_error("Error reading file: " + filename);
     }
 
     return matrix;
-
 }
 
 
@@ -105,13 +112,16 @@ void run_parallel_mult(const Matrix& matA, const Matrix& matB, std::vector<doubl
         current_row = args[t].end_row;
 
         int rc = pthread_create(&threads[t], nullptr, threads_mult_matrix, &args[t]);
-        if (rc) {
+        if (rc != 0) {
             throw std::runtime_error("Error creating thread: " + std::to_string(rc));
         }
     }
 
     for (int t = 0; t < num_threads; ++t) {
-        pthread_join(threads[t], nullptr);
+        int rc = pthread_join(threads[t], nullptr);
+        if (rc != 0) {
+            throw std::runtime_error("pthread_join failed with code: " + std::to_string(rc));
+        }
     }
 }
 
@@ -141,10 +151,10 @@ void print_matrix(const double* data, int N, const std::string& name) {
 
 int main() {
     try {
-        const std::string fileA_small = "../matrices/small_matrix1.bin";
-        const std::string fileB_small = "../matrices/small_matrix2.bin";
-        const std::string fileA_large = "../matrices/big_matrix1.bin";
-        const std::string fileB_large = "../matrices/big_matrix2.bin";
+        const std::string fileA_small = "files/small_matrix1.bin";
+        const std::string fileB_small = "files/small_matrix2.bin";
+        const std::string fileA_large = "files/big_matrix1.bin";
+        const std::string fileB_large = "files/big_matrix2.bin";
 
         std::cout << "=== TASK 1: SMALL MATRICES ===" << std::endl;
 
