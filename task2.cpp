@@ -1,4 +1,7 @@
 #include <iostream>
+#include <cctype>
+#include <filesystem>
+#include <fstream>
 #include <vector>
 #include <chrono>
 #include <pthread.h>
@@ -6,11 +9,11 @@
 #include <algorithm>
 #include <climits>
 #include <cstdlib>
+#include <cstring>
 
-const char OPERATION = 'S';
-
-const int TOTAL_SIZE = 10000000;
-const int NUM_THREADS = 8;
+const char DEFAULT_OPERATION = 'S';
+const std::string DEFAULT_FILE = "files/search.bin";
+const int DEFAULT_NUM_THREADS = 8;
 
 struct ThreadArgs {
     const int* data;
@@ -20,18 +23,55 @@ struct ThreadArgs {
     int block_size;
     int total_size;
     pthread_barrier_t* barrier;
+    char operation;
 };
 
+std::vector<int> read_array(const std::string& filename) {
+    if (!std::filesystem::exists(filename)) {
+        throw std::runtime_error("File does not exist: " + filename);
+    }
+
+    uintmax_t size = std::filesystem::file_size(filename);
+
+    if (size % sizeof(int) != 0) {
+        throw std::runtime_error("Invalid file size for int array: " + filename);
+    }
+
+    const int count = size / sizeof(int);
+    std::cout << "Read " << count << " integers from " << filename << std::endl;
+
+    std::vector<int> data(count);
+
+    std::ifstream file(filename, std::ios::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("Cannot open file: " + filename);
+    }
+
+    file.read(reinterpret_cast<char*>(data.data()), size);
+    if (!file) {
+        throw std::runtime_error("Error reading file: " + filename);
+    }
+
+    return data;
+}
 
 int sequential_reduction(const std::vector<int>& data, char op) {
     if (data.empty()) return 0;
+
     int res = 0;
+
     if (op == 'S') {
         for (int v : data) res += v;
     } else if (op == 'X') {
-        res = *std::max_element(data.begin(), data.end());
+        res = INT_MIN;
+        for (int v : data) {
+            if (v > res) res = v;
+        }
     } else if (op == 'N') {
-        res = *std::min_element(data.begin(), data.end());
+        res = INT_MAX;
+        for (int v : data) {
+            if (v < res) res = v;
+        }
     }
     return res;
 }
@@ -41,22 +81,23 @@ void* reduction_thread(void* arg) {
     ThreadArgs* args = static_cast<ThreadArgs*>(arg);
     int i = args->thread_id;
     int N = args->num_threads;
+    char op = args->operation;
 
     int start_idx = i * args->block_size;
     int end_idx = (i == N - 1) ? args->total_size : (i + 1) * args->block_size;
 
     int local_val = 0;
-    if (OPERATION == 'S') {
+    if (op == 'S') {
         local_val = 0;
         for (int k = start_idx; k < end_idx; ++k) {
             local_val += args->data[k];
         }
-    } else if (OPERATION == 'X') {
+    } else if (op == 'X') {
         local_val = INT_MIN;
         for (int k = start_idx; k < end_idx; ++k) {
             if (args->data[k] > local_val) local_val = args->data[k];
         }
-    } else if (OPERATION == 'N') {
+    } else if (op == 'N') {
         local_val = INT_MAX;
         for (int k = start_idx; k < end_idx; ++k) {
             if (args->data[k] < local_val) local_val = args->data[k];
@@ -68,10 +109,14 @@ void* reduction_thread(void* arg) {
     int step = N;
 
     while (step > 1) {
-        pthread_barrier_wait(args->barrier);
+        int rc = pthread_barrier_wait(args->barrier);
+
+        if (rc != 0 && rc != PTHREAD_BARRIER_SERIAL_THREAD) {
+            std::cerr << "Barrier wait error: " << strerror(rc) << std::endl;
+            return nullptr;
+        }
 
         int p = step;
-
         step = (step + 1) / 2;
 
         if (i + step >= p) {
@@ -81,13 +126,13 @@ void* reduction_thread(void* arg) {
         int partner_idx = i + step;
         int partner_val = args->result[partner_idx];
 
-        if (OPERATION == 'S') {
+        if (op == 'S') {
             args->result[i] += partner_val;
-        } else if (OPERATION == 'X') {
+        } else if (op == 'X') {
             if (partner_val > args->result[i]) {
                 args->result[i] = partner_val;
             }
-        } else if (OPERATION == 'N') {
+        } else if (op == 'N') {
             if (partner_val < args->result[i]) {
                 args->result[i] = partner_val;
             }
@@ -98,44 +143,55 @@ void* reduction_thread(void* arg) {
 }
 
 
-int main() {
+int main(int argc, char* argv[]) {
     try {
-        std::cout << "Generating array of " << TOTAL_SIZE << " integers..." << std::endl;
-        std::vector<int> data(TOTAL_SIZE);
+        std::string filename = DEFAULT_FILE;
+        char operation = DEFAULT_OPERATION;
+        int num_threads = DEFAULT_NUM_THREADS;
 
-        for (int i = 0; i < TOTAL_SIZE; ++i) {
-            data[i] = (rand() % 201) - 100;
-        }
+        if (argc >= 2) filename = argv[1];
+        if (argc >= 3) operation = argv[2][0];
+        if (argc >= 4) num_threads = std::stoi(argv[3]);
 
-        std::vector<int> result(NUM_THREADS, 0);
+        operation = toupper(operation);
+
+        std::cout << "Reading array from: " << filename << std::endl;
+        std::vector<int> data = read_array(filename);
+        std::cout << "Array size: " << data.size() << " elements." << std::endl;
+
+        std::vector<int> result(num_threads, 0);
 
         pthread_barrier_t barrier;
-        int rc = pthread_barrier_init(&barrier, nullptr, NUM_THREADS);
+        int rc = pthread_barrier_init(&barrier, nullptr, num_threads);
         if (rc != 0) throw std::runtime_error("Barrier init failed");
 
-        std::vector<pthread_t> threads(NUM_THREADS);
-        std::vector<ThreadArgs> args(NUM_THREADS);
-        int block_size = TOTAL_SIZE / NUM_THREADS;
+        std::vector<pthread_t> threads(num_threads);
+        std::vector<ThreadArgs> args(num_threads);
+        int block_size = data.size() / num_threads;
 
-        std::cout << "Starting parallel reduction (" << NUM_THREADS << " threads)..." << std::endl;
+        std::cout << "Starting parallel reduction (" << num_threads << " threads, Operation: "
+            << operation << ")..." << std::endl;
 
         auto start_par = std::chrono::high_resolution_clock::now();
 
-        for (int t = 0; t < NUM_THREADS; ++t) {
+        for (int t = 0; t < num_threads; ++t) {
             args[t].data = data.data();
             args[t].result = result.data();
-            args[t].num_threads = NUM_THREADS;
+            args[t].num_threads = num_threads;
             args[t].thread_id = t;
             args[t].block_size = block_size;
-            args[t].total_size = TOTAL_SIZE;
+            args[t].total_size = data.size();
             args[t].barrier = &barrier;
+            args[t].operation = operation;
 
             rc = pthread_create(&threads[t], nullptr, reduction_thread, &args[t]);
             if (rc != 0) throw std::runtime_error("Thread create failed");
         }
 
-        for (int t = 0; t < NUM_THREADS; ++t) {
-            pthread_join(threads[t], nullptr);
+        for (int t = 0; t < num_threads; ++t) {
+            rc = pthread_join(threads[t], nullptr);
+
+            if (rc != 0) throw std::runtime_error("Thread join failed");
         }
 
         auto end_par = std::chrono::high_resolution_clock::now();
@@ -145,11 +201,11 @@ int main() {
 
         std::cout << "Starting sequential reduction..." << std::endl;
         auto start_seq = std::chrono::high_resolution_clock::now();
-        int seq_result = sequential_reduction(data, OPERATION);
+        int seq_result = sequential_reduction(data, operation);
         auto end_seq = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> diff_seq = end_seq - start_seq;
 
-        std::string op_name = (OPERATION == 'S') ? "Sum" : (OPERATION == 'X') ? "Max" : "Min";
+        std::string op_name = (operation == 'S') ? "Sum" : (operation == 'X') ? "Max" : "Min";
 
         std::cout << "\nResults:" << std::endl;
         std::cout << "Sequential (" << op_name << "): " << seq_result << " in " << diff_seq.count() << " s" << std::endl;
