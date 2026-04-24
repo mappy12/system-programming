@@ -12,12 +12,12 @@
 #include <cstring>
 
 const char DEFAULT_OPERATION = 'S';
-const std::string DEFAULT_FILE = "files/search.bin";
+const std::string DEFAULT_FILE = "../files/search.bin";
 const int DEFAULT_NUM_THREADS = 8;
 
 struct ThreadArgs {
     const int* data;
-    int* result;
+    long long* result;
     int num_threads;
     int thread_id;
     int block_size;
@@ -55,10 +55,10 @@ std::vector<int> read_array(const std::string& filename) {
     return data;
 }
 
-int sequential_reduction(const std::vector<int>& data, char op) {
+long long sequential_reduction(const std::vector<int>& data, char op) {
     if (data.empty()) return 0;
 
-    int res = 0;
+    long long res = 0;
 
     if (op == 'S') {
         for (int v : data) res += v;
@@ -86,7 +86,7 @@ void* reduction_thread(void* arg) {
     int start_idx = i * args->block_size;
     int end_idx = (i == N - 1) ? args->total_size : (i + 1) * args->block_size;
 
-    int local_val = 0;
+    long long local_val = 0;
     if (op == 'S') {
         local_val = 0;
         for (int k = start_idx; k < end_idx; ++k) {
@@ -123,8 +123,8 @@ void* reduction_thread(void* arg) {
             continue;
         }
 
-        int partner_idx = i + step;
-        int partner_val = args->result[partner_idx];
+        const int partner_idx = i + step;
+        const long long partner_val = args->result[partner_idx];
 
         if (op == 'S') {
             args->result[i] += partner_val;
@@ -159,7 +159,7 @@ int main(int argc, char* argv[]) {
         std::vector<int> data = read_array(filename);
         std::cout << "Array size: " << data.size() << " elements." << std::endl;
 
-        std::vector<int> result(num_threads, 0);
+        std::vector<long long> result(num_threads, 0);
 
         pthread_barrier_t barrier;
         int rc = pthread_barrier_init(&barrier, nullptr, num_threads);
@@ -167,7 +167,7 @@ int main(int argc, char* argv[]) {
 
         std::vector<pthread_t> threads(num_threads);
         std::vector<ThreadArgs> args(num_threads);
-        int block_size = data.size() / num_threads;
+        const int block_size = data.size() / num_threads;
 
         std::cout << "Starting parallel reduction (" << num_threads << " threads, Operation: "
             << operation << ")..." << std::endl;
@@ -197,11 +197,11 @@ int main(int argc, char* argv[]) {
         auto end_par = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> diff_par = end_par - start_par;
 
-        int par_result = result[0];
+        long long par_result = result[0];
 
         std::cout << "Starting sequential reduction..." << std::endl;
         auto start_seq = std::chrono::high_resolution_clock::now();
-        int seq_result = sequential_reduction(data, operation);
+        long long seq_result = sequential_reduction(data, operation);
         auto end_seq = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> diff_seq = end_seq - start_seq;
 

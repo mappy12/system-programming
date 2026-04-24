@@ -12,6 +12,37 @@
 struct Matrix {
     std::vector<double> data;
     int N;
+
+    static Matrix read(const std::string& filename) {
+        if (!std::filesystem::exists(filename)) {
+            throw std::runtime_error("File does not exist: " + filename);
+        }
+
+        uintmax_t size = std::filesystem::file_size(filename);
+
+        if (size % sizeof(double) != 0) {
+            throw std::runtime_error("Invalid file size for double matrix: " + filename);
+        }
+
+        const int total_elements = static_cast<int>(size / sizeof(double));
+        const int N = static_cast<int>(std::sqrt(total_elements));
+
+        Matrix matrix;
+        matrix.N = N;
+        matrix.data.resize(total_elements);
+
+        std::ifstream file(filename, std::ios::binary);
+        if (!file.is_open()) {
+            throw std::runtime_error("Cannot open file: " + filename);
+        }
+
+        file.read(reinterpret_cast<char*>(matrix.data.data()), size);
+        if (!file) {
+            throw std::runtime_error("Error reading file: " + filename);
+        }
+
+        return matrix;
+    }
 };
 
 struct ThreadArgs {
@@ -22,38 +53,6 @@ struct ThreadArgs {
     int start_row;
     int end_row;
 };
-
-
-Matrix read_matrix(const std::string& filename) {
-    if (!std::filesystem::exists(filename)) {
-        throw std::runtime_error("File does not exist: " + filename);
-    }
-
-    uintmax_t size = std::filesystem::file_size(filename);
-
-    if (size % sizeof(double) != 0) {
-        throw std::runtime_error("Invalid file size for double matrix: " + filename);
-    }
-
-    const int total_elements = static_cast<int>(size / sizeof(double));
-    const int N = static_cast<int>(std::sqrt(total_elements));
-
-    Matrix matrix;
-    matrix.N = N;
-    matrix.data.resize(total_elements);
-
-    std::ifstream file(filename, std::ios::binary);
-    if (!file.is_open()) {
-        throw std::runtime_error("Cannot open file: " + filename);
-    }
-
-    file.read(reinterpret_cast<char*>(matrix.data.data()), size);
-    if (!file) {
-        throw std::runtime_error("Error reading file: " + filename);
-    }
-
-    return matrix;
-}
 
 
 void seq_mult_matrix(const double* A, const double* B, double* C, const int N) {
@@ -87,11 +86,11 @@ void* threads_mult_matrix(void* arg) {
 
 
 void run_parallel_mult(const Matrix& matA, const Matrix& matB, std::vector<double>& C_par, int num_threads) {
-    int N = matA.N;
+    const int N = matA.N;
     std::vector<pthread_t> threads(num_threads);
     std::vector<ThreadArgs> args(num_threads);
 
-    int rows_per_thread = N / num_threads;
+    const int rows_per_thread = N / num_threads;
     int current_row = 0;
 
     for (int t = 0; t < num_threads; ++t) {
@@ -101,6 +100,7 @@ void run_parallel_mult(const Matrix& matA, const Matrix& matB, std::vector<doubl
         args[t].N = N;
         args[t].start_row = current_row;
 
+        // Последний поток забирает все оставшиеся строки
         if (t == num_threads - 1) {
             args[t].end_row = N;
         } else {
@@ -148,15 +148,15 @@ void print_matrix(const double* data, int N, const std::string& name) {
 
 int main() {
     try {
-        const std::string fileA_small = "files/small_matrix1.bin";
-        const std::string fileB_small = "files/small_matrix2.bin";
-        const std::string fileA_large = "files/big_matrix1.bin";
-        const std::string fileB_large = "files/big_matrix2.bin";
+        const std::string fileA_small = "../files/small_matrix1.bin";
+        const std::string fileB_small = "../files/small_matrix2.bin";
+        const std::string fileA_large = "../files/big_matrix1.bin";
+        const std::string fileB_large = "../files/big_matrix2.bin";
 
         std::cout << "=== TASK 1: SMALL MATRICES ===" << std::endl;
 
-        Matrix matA_s = read_matrix(fileA_small);
-        Matrix matB_s = read_matrix(fileB_small);
+        Matrix matA_s = Matrix::read(fileA_small);
+        Matrix matB_s = Matrix::read(fileB_small);
         int N_s = matA_s.N;
 
         std::cout << "Small matrices size N = " << N_s << std::endl;
@@ -193,8 +193,8 @@ int main() {
 
         std::cout << "\n=== TASK 1: LARGE MATRICES ===" << std::endl;
 
-        Matrix matA_l = read_matrix(fileA_large);
-        Matrix matB_l = read_matrix(fileB_large);
+        Matrix matA_l = Matrix::read(fileA_large);
+        Matrix matB_l = Matrix::read(fileB_large);
         int N_l = matA_l.N;
 
         std::cout << "Large matrices size N = " << N_l << std::endl;

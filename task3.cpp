@@ -4,8 +4,13 @@
 #include <pthread.h>
 #include <cstring>
 #include <vector>
-#include <random>
-#include <functional>
+
+const int MAX_QUEUE_SIZE = 5;
+const int NUM_PRODUCERS = 3;
+const int NUM_CONSUMERS = 1;
+const int ITEMS_PER_PRODUCER = 10;
+
+pthread_mutex_t cout_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 template <typename T>
 class mt_queue {
@@ -19,7 +24,7 @@ private:
 
     bool is_finished;
 
-    void check_pthread(int rc, const char* msg) {
+    static void check_pthread(int rc, const char* msg) {
         if (rc != 0) {
             throw std::runtime_error(std::string(msg));
         }
@@ -84,14 +89,14 @@ public:
 
     bool full() const {
         check_pthread(pthread_mutex_lock(&mutex), "Full lock failed");
-        bool res = (q_.size() >= max_size);
+        const bool res = (q_.size() >= max_size);
         pthread_mutex_unlock(&mutex);
         return res;
     }
 
     bool empty() const {
         check_pthread(pthread_mutex_lock(&mutex), "Empty lock failed");
-        bool res = q_.empty();
+        const bool res = q_.empty();
         pthread_mutex_unlock(&mutex);
         return res;
     }
@@ -150,10 +155,14 @@ void* producer_thread(void* arg) {
     try {
         for (int i = 0; i < args->count; ++i) {
             int val = args->id * 1000 + i;
-            args->queue->enqueue(val);
+            pthread_mutex_lock(&cout_mutex);
             std::cout << "[P" << args->id << "] Produced: " << val << std::endl;
+            pthread_mutex_unlock(&cout_mutex);
+            args->queue->enqueue(val);
         }
+        pthread_mutex_lock(&cout_mutex);
         std::cout << "[Producer " << args->id << "] Finished." << std::endl;
+        pthread_mutex_unlock(&cout_mutex);
     } catch (const std::exception& e) {
         std::cerr << "Producer error: " << e.what() << std::endl;
     }
@@ -165,11 +174,14 @@ void* consumer_thread(void* arg) {
     try {
         while (true) {
             int val = args->queue->dequeue();
+            pthread_mutex_lock(&cout_mutex);
             std::cout << "[C" << args->id << "] Consumed: " << val << std::endl;
+            pthread_mutex_unlock(&cout_mutex);
         }
     } catch (const std::runtime_error& e) {
-
+        pthread_mutex_lock(&cout_mutex);
         std::cout << "[Consumer " << args->id << "] Finished (Queue closed)." << std::endl;
+        pthread_mutex_unlock(&cout_mutex);
     } catch (const std::exception& e) {
         std::cerr << "Consumer error: " << e.what() << std::endl;
     }
@@ -177,11 +189,6 @@ void* consumer_thread(void* arg) {
 }
 
 int main() {
-    const int MAX_QUEUE_SIZE = 5;
-    const int NUM_PRODUCERS = 3;
-    const int NUM_CONSUMERS = 4;
-    const int ITEMS_PER_PRODUCER = 10;
-
     mt_queue<int> queue(MAX_QUEUE_SIZE);
 
     std::vector<pthread_t> producers(NUM_PRODUCERS);
