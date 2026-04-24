@@ -1,9 +1,8 @@
 #include <iostream>
 #include <queue>
 #include <optional>
-#include <thread>
-#include <chrono>
 #include <pthread.h>
+#include <cstring>
 #include <vector>
 #include <random>
 #include <functional>
@@ -11,20 +10,26 @@
 template <typename T>
 class mt_queue {
 private:
-    std::queue<T> buffer;
+    std::queue<T> q_;
     size_t max_size;
 
-    pthread_mutex_t mutex;
+    mutable pthread_mutex_t mutex;
     pthread_cond_t not_full;
     pthread_cond_t not_empty;
 
     bool is_finished;
 
+    void check_pthread(int rc, const char* msg) {
+        if (rc != 0) {
+            throw std::runtime_error(std::string(msg));
+        }
+    }
+
 public:
     explicit mt_queue(size_t max_sz) : max_size(max_sz), is_finished(false) {
-        pthread_mutex_init(&mutex, nullptr);
-        pthread_cond_init(&not_full, nullptr);
-        pthread_cond_init(&not_empty, nullptr);
+        check_pthread(pthread_mutex_init(&mutex, nullptr), "Mutex init failed");
+        check_pthread(pthread_cond_init(&not_full, nullptr), "Cond not_full init failed");
+        check_pthread(pthread_cond_init(&not_empty, nullptr), "Cond not_empty init failed");
     }
 
     ~mt_queue() {
@@ -39,10 +44,10 @@ public:
     mt_queue& operator=(mt_queue&&) = delete;
 
     void enqueue(const T& v) {
-        pthread_mutex_lock(&mutex);
+        check_pthread(pthread_mutex_lock(&mutex), "Enqueue lock failed");
 
-        while (buffer.size() >= max_size && !is_finished) {
-            pthread_cond_wait(&not_full, &mutex);
+        while (q_.size() >= max_size && !is_finished) {
+            check_pthread(pthread_cond_wait(&not_full, &mutex), "Enqueue wait failed");
         }
 
         if (is_finished) {
@@ -50,54 +55,53 @@ public:
             return;
         }
 
-        buffer.push(v);
+        q_.push(v);
 
-        pthread_cond_signal(&not_empty);
-
-        pthread_mutex_unlock(&mutex);
+        check_pthread(pthread_cond_signal(&not_empty), "Enqueue signal failed");
+        check_pthread(pthread_mutex_unlock(&mutex), "Enqueue unlock failed");
     }
 
-    std::optional<T> dequeue() {
-        pthread_mutex_lock(&mutex);
+   T dequeue() {
+        check_pthread(pthread_mutex_lock(&mutex), "Dequeue lock failed");
 
-        while (buffer.empty() && !is_finished) {
-            pthread_cond_wait(&not_empty, &mutex);
+        while (q_.empty() && !is_finished) {
+            check_pthread(pthread_cond_wait(&not_empty, &mutex), "Dequeue wait failed");
         }
 
-        if (buffer.empty()) {
+        if (q_.empty()) {
             pthread_mutex_unlock(&mutex);
-            return std::nullopt;
+            throw std::runtime_error("Queue is finished and empty");
         }
 
-        T val = buffer.front();
-        buffer.pop();
+        T val = q_.front();
+        q_.pop();
 
-        pthread_cond_signal(&not_full);
+        check_pthread(pthread_cond_signal(&not_full), "Dequeue signal failed");
+        check_pthread(pthread_mutex_unlock(&mutex), "Dequeue unlock failed");
 
-        pthread_mutex_unlock(&mutex);
         return val;
     }
 
     bool full() const {
-        pthread_mutex_lock(&const_cast<pthread_mutex_t&>(mutex));
-        bool res = (buffer.size() >= max_size);
-        pthread_mutex_unlock(&const_cast<pthread_mutex_t&>(mutex));
+        check_pthread(pthread_mutex_lock(&mutex), "Full lock failed");
+        bool res = (q_.size() >= max_size);
+        pthread_mutex_unlock(&mutex);
         return res;
     }
 
     bool empty() const {
-        pthread_mutex_lock(&const_cast<pthread_mutex_t&>(mutex));
-        bool res = buffer.empty();
-        pthread_mutex_unlock(&const_cast<pthread_mutex_t&>(mutex));
+        check_pthread(pthread_mutex_lock(&mutex), "Empty lock failed");
+        bool res = q_.empty();
+        pthread_mutex_unlock(&mutex);
         return res;
     }
 
     std::optional<T> try_dequeue() {
-        pthread_mutex_lock(&mutex);
+        check_pthread(pthread_mutex_lock(&mutex), "Try dequeue lock failed");
         std::optional<T> res;
-        if (!buffer.empty()) {
-            res = buffer.front();
-            buffer.pop();
+        if (!q_.empty()) {
+            res = q_.front();
+            q_.pop();
             pthread_cond_signal(&not_full);
         }
         pthread_mutex_unlock(&mutex);
@@ -105,19 +109,22 @@ public:
     }
 
     bool try_enqueue(const T& v) {
-        pthread_mutex_lock(&mutex);
+        check_pthread(pthread_mutex_lock(&mutex), "Try enqueue lock failed");
         bool success = false;
-        if (buffer.size() < max_size) {
-            buffer.push(v);
+
+        if (q_.size() < max_size) {
+            q_.push(v);
             pthread_cond_signal(&not_empty);
             success = true;
         }
+
         pthread_mutex_unlock(&mutex);
         return success;
     }
 
     void finish() {
-        pthread_mutex_lock(&mutex);
+        check_pthread(pthread_mutex_lock(&mutex), "Finish lock failed");
+
         is_finished = true;
 
         pthread_cond_broadcast(&not_full);
@@ -126,26 +133,47 @@ public:
     }
 };
 
-void producer_thread(mt_queue<int>& queue, int id, int count) {
-    for (int i = 0; i < count; ++i) {
-        int val = id * 1000 + i;
-        queue.enqueue(val);
-        std::cout << "[P" << id << "] Produced: " << val << std::endl;
+struct ProducerArgs {
+    mt_queue<int>* queue;
+    int id;
+    int count;
+};
+
+struct ConsumerArgs {
+    mt_queue<int>* queue;
+    int id;
+};
+
+void* producer_thread(void* arg) {
+    ProducerArgs* args = static_cast<ProducerArgs*>(arg);
+
+    try {
+        for (int i = 0; i < args->count; ++i) {
+            int val = args->id * 1000 + i;
+            args->queue->enqueue(val);
+            std::cout << "[P" << args->id << "] Produced: " << val << std::endl;
+        }
+        std::cout << "[Producer " << args->id << "] Finished." << std::endl;
+    } catch (const std::exception& e) {
+        std::cerr << "Producer error: " << e.what() << std::endl;
     }
-    std::cout << "[Producer " << id << "] Finished producing." << std::endl;
+    return nullptr;
 }
 
-void consumer_thread(mt_queue<int>& queue, int id) {
-    while (true) {
-        auto val_opt = queue.dequeue();
-        if (!val_opt.has_value()) {
-            break;
+void* consumer_thread(void* arg) {
+    ConsumerArgs* args = static_cast<ConsumerArgs*>(arg);
+    try {
+        while (true) {
+            int val = args->queue->dequeue();
+            std::cout << "[C" << args->id << "] Consumed: " << val << std::endl;
         }
-        std::cout << "[C" << id << "] Consumed: " << val_opt.value() << std::endl;
+    } catch (const std::runtime_error& e) {
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        std::cout << "[Consumer " << args->id << "] Finished (Queue closed)." << std::endl;
+    } catch (const std::exception& e) {
+        std::cerr << "Consumer error: " << e.what() << std::endl;
     }
-    std::cout << "[Consumer " << id << "] Finished consuming." << std::endl;
+    return nullptr;
 }
 
 int main() {
@@ -156,30 +184,40 @@ int main() {
 
     mt_queue<int> queue(MAX_QUEUE_SIZE);
 
-    std::vector<std::thread> producers;
-    std::vector<std::thread> consumers;
+    std::vector<pthread_t> producers(NUM_PRODUCERS);
+    std::vector<pthread_t> consumers(NUM_CONSUMERS);
+
+    std::vector<ProducerArgs> prod_args(NUM_PRODUCERS);
+    std::vector<ConsumerArgs> cons_args(NUM_CONSUMERS);
 
     std::cout << "Starting " << NUM_PRODUCERS << " producers and " << NUM_CONSUMERS << " consumers..." << std::endl;
 
     for (int i = 0; i < NUM_CONSUMERS; ++i) {
-        consumers.emplace_back(consumer_thread, std::ref(queue), i);
+        cons_args[i].queue = &queue;
+        cons_args[i].id = i;
+        pthread_create(&consumers[i], nullptr, consumer_thread, &cons_args[i]);
     }
 
     for (int i = 0; i < NUM_PRODUCERS; ++i) {
-        producers.emplace_back(producer_thread, std::ref(queue), i, ITEMS_PER_PRODUCER);
+        prod_args[i].queue = &queue;
+        prod_args[i].id = i;
+        prod_args[i].count = ITEMS_PER_PRODUCER;
+        pthread_create(&producers[i], nullptr, producer_thread, &prod_args[i]);
     }
 
-    for (auto& t : producers) {
-        t.join();
+    for (int i = 0; i < NUM_PRODUCERS; ++i) {
+        pthread_join(producers[i], nullptr);
     }
+
     std::cout << "All producers finished. Signaling completion..." << std::endl;
 
     queue.finish();
 
-    for (auto& t : consumers) {
-        t.join();
+    for (int i = 0; i < NUM_CONSUMERS; ++i) {
+        pthread_join(consumers[i], nullptr);
     }
-    std::cout << "All consumers finished. Program exiting." << std::endl;
+
+    std::cout << "All consumers finished. Exit." << std::endl;
 
     return 0;
 }

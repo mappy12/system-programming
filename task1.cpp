@@ -8,9 +8,6 @@
 #include <iomanip>
 #include <pthread.h>
 #include <stdexcept>
-#include <algorithm>
-
-#include "check.hpp"
 
 struct Matrix {
     std::vector<double> data;
@@ -239,5 +236,3 @@ int main() {
 
     return 0;
 }
-
-
