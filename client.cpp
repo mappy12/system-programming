@@ -71,7 +71,7 @@ int main(int argc, char* argv[]) {
         std::cout << "Server: " << recv_buffer;
 
         if (std::string(recv_buffer).find("Correct") != std::string::npos) {
-            std::cout << "Game Over. Good job!" << std::endl;
+            std::cout << "Game Over!" << std::endl;
             break;
         }
     }

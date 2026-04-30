@@ -28,7 +28,7 @@ inline int make_socket(int type) {
             return socket(AF_INET, SOCK_STREAM, 0);
         case SOCK_SEQPACKET:
             return check(socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP)); // analogue to
-            SOCK_SEQPACKET
+            SOCK_SEQPACKET;
             default:
             errno = EINVAL;
             return -1;
