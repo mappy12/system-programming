@@ -27,17 +27,31 @@ vector<User> users;
 vector<Group> groups;
 
 int in_list(const string& user, const string& list) {
-    if (list.empty()) return 0;
+    if (list.empty())
+        return 0;
 
-    size_t start = 0, pos;
+    size_t start = 0;
 
-    while ((pos = list.find(',', start)) != string::npos) {
-        if (list.substr(start, pos - start) == user)
+    while (true) {
+        size_t pos = list.find(',', start);
+
+        string current;
+
+        if (pos == string::npos)
+            current = list.substr(start);
+        else
+            current = list.substr(start, pos - start);
+
+        if (!current.empty() && current == user)
             return 1;
+
+        if (pos == string::npos)
+            break;
+
         start = pos + 1;
     }
 
-    return list.substr(start) == user;
+    return 0;
 }
 
 void load_passwd(FILE* fp) {
