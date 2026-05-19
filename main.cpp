@@ -26,6 +26,25 @@ struct Group {
 vector<User> users;
 vector<Group> groups;
 
+vector<string> split(const string& line, char delim) {
+    vector<string> parts;
+    size_t start = 0;
+
+    while (true) {
+        size_t pos = line.find(delim, start);
+
+        if (pos == string::npos) {
+            parts.push_back(line.substr(start));
+            break;
+        }
+
+        parts.push_back(line.substr(start, pos - start));
+        start = pos + 1;
+    }
+
+    return parts;
+}
+
 int in_list(const string& user, const string& list) {
     if (list.empty())
         return 0;
@@ -35,14 +54,14 @@ int in_list(const string& user, const string& list) {
     while (true) {
         size_t pos = list.find(',', start);
 
-        string current;
+        string cur;
 
         if (pos == string::npos)
-            current = list.substr(start);
+            cur = list.substr(start);
         else
-            current = list.substr(start, pos - start);
+            cur = list.substr(start, pos - start);
 
-        if (!current.empty() && current == user)
+        if (cur == user)
             return 1;
 
         if (pos == string::npos)
@@ -57,22 +76,22 @@ int in_list(const string& user, const string& list) {
 void load_passwd(FILE* fp) {
     char line[1024];
 
-    while (fgets(line, sizeof(line), fp)) {
-        char* save = nullptr;
+    while (check(fgets(line, sizeof(line), fp)) != nullptr) {
 
-        char* name = strtok_r(line, ":\n", &save);
-        char* x = strtok_r(nullptr, ":\n", &save);
-        char* uid = strtok_r(nullptr, ":\n", &save);
-        strtok_r(nullptr, ":\n", &save);
-        strtok_r(nullptr, ":\n", &save);
-        char* home = strtok_r(nullptr, ":\n", &save);
+        string s = line;
+        if (!s.empty() && s.back() == '\n')
+            s.pop_back();
 
-        if (!name || !uid || !home) continue;
+        vector<string> p = split(s, ':');
+
+        if (p.size() < 7)
+            continue;
 
         User u;
-        u.username = name;
-        u.uid = atoi(uid);
-        u.home = home;
+
+        u.username = p[0];
+        u.uid = atoi(p[2].c_str());
+        u.home = p[5];
 
         users.push_back(u);
     }
@@ -81,17 +100,20 @@ void load_passwd(FILE* fp) {
 void load_shadow(FILE* fp) {
     char line[1024];
 
-    while (fgets(line, sizeof(line), fp)) {
-        char* save = nullptr;
+    while (check(fgets(line, sizeof(line), fp)) != nullptr) {
 
-        char* name = strtok_r(line, ":\n", &save);
-        char* hash = strtok_r(nullptr, ":\n", &save);
+        string s = line;
+        if (!s.empty() && s.back() == '\n')
+            s.pop_back();
 
-        if (!name || !hash) continue;
+        vector<string> p = split(s, ':');
+
+        if (p.size() < 2)
+            continue;
 
         for (auto& u : users) {
-            if (u.username == name) {
-                u.passwordHash = hash;
+            if (u.username == p[0]) {
+                u.passwordHash = p[1];
                 break;
             }
         }
@@ -101,20 +123,22 @@ void load_shadow(FILE* fp) {
 void load_gshadow(FILE* fp) {
     char line[2048];
 
-    while (fgets(line, sizeof(line), fp)) {
-        char* save = nullptr;
+    while (check(fgets(line, sizeof(line), fp)) != nullptr) {
 
-        char* name = strtok_r(line, ":\n", &save);
-        strtok_r(nullptr, ":\n", &save);
-        char* admins = strtok_r(nullptr, ":\n", &save);
-        char* users_list = strtok_r(nullptr, ":\n", &save);
+        string s = line;
+        if (!s.empty() && s.back() == '\n')
+            s.pop_back();
 
-        if (!name) continue;
+        vector<string> p = split(s, ':');
+
+        if (p.size() < 4)
+            continue;
 
         Group g;
-        g.groupname = name;
-        if (admins) g.admins = admins;
-        if (users_list) g.users = users_list;
+
+        g.groupname = p[0];
+        g.admins = p[2];
+        g.users = p[3];
 
         groups.push_back(g);
     }
@@ -127,7 +151,8 @@ void print_groups(const string& user) {
 
         if (member || admin) {
             cout << g.groupname;
-            if (admin) cout << "(admin)";
+            if (admin)
+                cout << "(admin)";
             cout << " ";
         }
     }
@@ -144,7 +169,7 @@ int main() {
     FILE* fpShadow = check(fdopen(fdShadow, "r"));
     FILE* fpGshadow = check(fdopen(fdGshadow, "r"));
 
-    setuid(getuid()); // сброс прав
+    setuid(getuid()); // drop root privileges ASAP
 
     cout << "Privileges dropped\n\n";
 
@@ -158,6 +183,7 @@ int main() {
         cout << "UID: " << u.uid << "\n";
         cout << "Home: " << u.home << "\n";
         cout << "Hash: " << u.passwordHash << "\n";
+
         cout << "Groups: ";
         print_groups(u.username);
         cout << "\n";
