@@ -60,7 +60,7 @@ inline sockaddr_in local_addr(unsigned short port) {
 inline void ignore_sigpipe() {
     struct sigaction sa{};
     sa.sa_handler = SIG_IGN;
-    sigaction(SIGPIPE, &sa, nullptr);
+    check(sigaction(SIGPIPE, &sa, nullptr));
 }
 
 #endif
