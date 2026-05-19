@@ -110,7 +110,7 @@ int main(int argc, char* argv[]) {
     
     int listening_socket = check(make_socket(SOCKET_TYPE));
     check(bind(listening_socket, (sockaddr*)&server_address, sizeof(server_address)));
-    check(listen(listening_socket, 10)); // Backlog 10
+    check(listen(listening_socket, 10));
 
     std::cout << "Server started on port " << port << " (PID: " << getpid() << ")" << std::endl;
 

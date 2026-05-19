@@ -23,13 +23,9 @@ int main(int argc, char* argv[]) {
     dest_address.sin_port = htons(port);
 
     if (inet_pton(AF_INET, host.c_str(), &dest_address.sin_addr) <= 0) {
-        struct hostent* he = gethostbyname(host.c_str());
-        if (he == NULL) {
-            herror("gethostbyname");
-            close(sock_fd);
-            return 1;
-        }
-        memcpy(&dest_address.sin_addr, he->h_addr_list[0], he->h_length);
+        std::cerr << "Invalid IP address: " << host << std::endl;
+        close(sock_fd);
+        return 1;
     }
 
     std::cout << "Connecting to " << dest_address << "..." << std::endl;
