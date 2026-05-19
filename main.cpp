@@ -53,21 +53,15 @@ void loadPasswd(FILE* fp) {
 
     while (fgets(line, sizeof(line), fp)) {
         string str(line);
-
-        if (!str.empty() && str.back() == '\n')
-            str.pop_back();
+        if (!str.empty() && str.back() == '\n') str.pop_back();
 
         vector<string> parts = split(str, ':');
-
-        if (parts.size() < 7)
-            continue;
+        if (parts.size() < 7) continue;
 
         User user;
-
         user.username = parts[0];
         user.uid = stoi(parts[2]);
         user.home = parts[5];
-
         users.push_back(user);
     }
 }
@@ -77,14 +71,10 @@ void loadShadow(FILE* fp) {
 
     while (fgets(line, sizeof(line), fp)) {
         string str(line);
-
-        if (!str.empty() && str.back() == '\n')
-            str.pop_back();
+        if (!str.empty() && str.back() == '\n') str.pop_back();
 
         vector<string> parts = split(str, ':');
-
-        if (parts.size() < 2)
-            continue;
+        if (parts.size() < 2) continue;
 
         for (auto& user : users) {
             if (user.username == parts[0]) {
@@ -100,85 +90,58 @@ void loadGshadow(FILE* fp) {
 
     while (fgets(line, sizeof(line), fp)) {
         string str(line);
-
-        if (!str.empty() && str.back() == '\n')
-            str.pop_back();
+        if (!str.empty() && str.back() == '\n') str.pop_back();
 
         vector<string> parts = split(str, ':');
+        if (parts.size() < 4) continue;
 
-        if (parts.size() < 4)
-            continue;
-
-        Group group;
-
-        group.groupname = parts[0];
-        group.admins = parts[2];
-        group.users = parts[3];
-
-        groups.push_back(group);
+        Group g;
+        g.groupname = parts[0];
+        g.admins = parts[2];
+        g.users = parts[3];
+        groups.push_back(g);
     }
 }
 
 void printGroups(const string& username) {
-    for (const auto& group : groups) {
-        bool isMember = userInList(username, group.users);
-        bool isAdmin = userInList(username, group.admins);
+    for (const auto& g : groups) {
+        bool member = userInList(username, g.users);
+        bool admin = userInList(username, g.admins);
 
-        if (isMember || isAdmin) {
-            cout << group.groupname;
-
-            if (isAdmin)
-                cout << " (admin)";
-
+        if (member || admin) {
+            cout << g.groupname;
+            if (admin) cout << "(admin)";
             cout << " ";
         }
     }
 }
 
 int main() {
-    cout << "Real UID: " << getuid() << endl;
-    cout << "Effective UID: " << geteuid() << endl << endl;
+    cout << getuid() << " " << geteuid() << endl;
 
-    int fdPasswd = open("/etc/passwd", O_RDONLY);
-    int fdShadow = open("/etc/shadow", O_RDONLY);
-    int fdGshadow = open("/etc/gshadow", O_RDONLY);
-
-    if (fdPasswd < 0 || fdShadow < 0 || fdGshadow < 0) {
-        perror("open");
-        return 1;
-    }
-
-    if (setuid(getuid()) != 0) {
-        perror("setuid");
-        return 1;
-    }
-
-    cout << "Privileges dropped" << endl;
-    cout << "Current Effective UID: " << geteuid() << endl << endl;
-
-    FILE* fpPasswd = fdopen(fdPasswd, "r");
-    FILE* fpShadow = fdopen(fdShadow, "r");
-    FILE* fpGshadow = fdopen(fdGshadow, "r");
+    FILE* fpPasswd = fopen("/etc/passwd", "r");
+    FILE* fpShadow = fopen("/etc/shadow", "r");
+    FILE* fpGshadow = fopen("/etc/gshadow", "r");
 
     if (!fpPasswd || !fpShadow || !fpGshadow) {
-        perror("fdopen");
+        perror("fopen");
         return 1;
     }
+
+    setuid(getuid()); // сбрасываем рут права сразу после открытия файла
 
     loadPasswd(fpPasswd);
     loadShadow(fpShadow);
     loadGshadow(fpGshadow);
 
-    for (const auto& user : users) {
-        cout << "=====================================" << endl;
-        cout << "Username: " << user.username << endl;
-        cout << "UID: " << user.uid << endl;
-        cout << "Home directory: " << user.home << endl;
-        cout << "Password hash: " << user.passwordHash << endl;
-
-        cout << "Groups: ";
-        printGroups(user.username);
-        cout << endl;
+    for (const auto& u : users) {
+        cout << "====================\n";
+        cout << u.username << "\n";
+        cout << u.uid << "\n";
+        cout << u.home << "\n";
+        cout << u.passwordHash << "\n";
+        printGroups(u.username);
+        cout << "\n";
     }
 
     fclose(fpPasswd);
